@@ -1,0 +1,90 @@
+<?php
+session_start();
+require_once 'config.php';
+
+// Validasi session - hanya user yang sudah login bisa akses
+if (!isset($_SESSION['user_id'])) {
+    header("Location: Login.php");
+    exit();
+}
+
+// Ambil data mobil dari database berdasarkan ID
+$car_id = isset($_GET['car_id']) ? $_GET['car_id'] : '';
+if (!$car_id) {
+    // Jika tidak ada car_id, redirect ke halaman pemilihan mobil
+    header("Location: MenuPilihCar.php");
+    exit();
+}
+
+$stmt = $pdo->prepare("SELECT * FROM cars WHERE id = ? AND available = 1");
+$stmt->execute([$car_id]);
+$car = $stmt->fetch(PDO::FETCH_ASSOC);
+
+if (!$car) {
+    // Jika mobil tidak ditemukan, redirect ke halaman pemilihan mobil
+    header("Location: MenuPilihCar.php");
+    exit();
+}
+
+// Proses form checkout
+$errors = [];
+$success = false;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $pickup_date = $_POST['pickup_date'] ?? '';
+    $return_date = $_POST['return_date'] ?? '';
+    $pickup_location = $_POST['pickup_location'] ?? '';
+    $return_location = $_POST['return_location'] ?? '';
+    $additional_driver = isset($_POST['additional_driver']) ? 1 : 0;
+    $insurance = $_POST['insurance'] ?? 'basic';
+    $payment_method = $_POST['payment_method'] ?? '';
+    
+    // Validasi
+    if (empty($pickup_date)) {
+        $errors[] = "Pickup date is required";
+    }
+    
+    if (empty($return_date)) {
+        $errors[] = "Return date is required";
+    }
+    
+    if (empty($pickup_location)) {
+        $errors[] = "Pickup location is required";
+    }
+    
+    if (empty($return_location)) {
+        $errors[] = "Return location is required";
+    }
+    
+    if (empty($payment_method)) {
+        $errors[] = "Payment method is required";
+    }
+    
+    // Jika tidak ada error, proses checkout
+    if (empty($errors)) {
+        // Hitung jumlah hari
+        $pickup = new DateTime($pickup_date);
+        $return = new DateTime($return_date);
+        $days = $return->diff($pickup)->days;
+        
+        // Hitung biaya tambahan
+        $additional_driver_cost = $additional_driver ? 50000 * $days : 0;
+        
+        $insurance_cost = 0;
+        if ($insurance === 'premium') {
+            $insurance_cost = 150000 * $days;
+        } elseif ($insurance === 'full') {
+            $insurance_cost = 250000 * $days;
+        }
+        
+        // Total biaya
+        $total_cost = ($car['price_per_day'] * $days) + $additional_driver_cost + $insurance_cost;
+        
+        // Simpan data ke database (contoh sederhana)
+        $stmt = $pdo->prepare("INSERT INTO rentals (user_id, car_id, pickup_date, return_date, pickup_location, return_location, additional_driver, insurance, total_cost, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')");
+        $stmt->execute([$_SESSION['user_id'], $car_id, $pickup_date, $return_date, $pickup_location, $return_location, $additional_driver, $insurance, $total_cost]);
+        
+        $success = true;
+    }
+}
+?>
